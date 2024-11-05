@@ -19,11 +19,10 @@
 # Change the file extension to match the format (.xml for XML, etc...)
 #
 ###
-title: "TODO - Your title"
-abbrev: "TODO - Abbreviation"
+title: "JSON Modelling"
 category: info
 
-docname: draft-todo-yourname-protocol-latest
+docname: draft-miller-json-modelling-latest
 submissiontype: IETF  # also: "independent", "editorial", "IAB", or "IRTF"
 number:
 date:
@@ -45,9 +44,9 @@ venue:
 
 author:
  -
-    fullname: Your Name Here
-    organization: Your Organization Here
-    email: your.email@example.com
+    fullname: Darrel Miller
+    organization: Microsoft
+    email: darrel@tavis.ca
 
 normative:
 
