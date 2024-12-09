@@ -64,7 +64,7 @@ This document describes a process that normalizes JSON Schema documents into a f
 
 Root schema: The top level JSON schema that is being considered.
 
-subschema: A JSON schema that is contained in a root schema.
+Subschema: A JSON schema that is contained in a root schema.
 
 Anonymous schema: A JSON schema that has no user provided identifier. i.e. it is not referenced with a $ref and it doesn't have an $id.
 
@@ -72,18 +72,29 @@ Anonymous schema: A JSON schema that has no user provided identifier. i.e. it is
 
 JSON Schema is effectively a graph of boolean expressions that are evaluated against JSON instances. The nature of boolean expressions is that they can be expressed in many different ways that are logically equivalent. Through boolean algebra operations, the JSON Schema document can be refactored to produce a canonical form that is more suitable for modelling types.
 
-As an example, the following two schemas are logically equivalent but are expressed with different structures:
+### Eliminating anonymous allOfs
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "id": { "type": "string" },
-    "name": { "type": "string" },
-    "age": { "type": "integer" }
-  }
-}
-```
+The following demonstrates the boolean expression refactoring that can be used to eliminate anonymous schemas in allOfs.
+
+`x = (a & b & c) & (d & e & f) & (g & h & i)`
+
+simplifes to
+
+`x = a & b & c & d & e & f & g & h & i`
+
+assuming there are no contradicting keywords.
+
+It is only necessary to eliminate anonymous schemas as schemas with $id or using $ref can be projected into a type that is used as an inheritance base type or interface on the root schema.
+
+This technique can also help when there are keywords in the root schema.
+
+`x = a & b & (c & d & e)`
+
+simplifies to
+
+`x = a & b & c & d & e`
+
+As an example, the first schema can be refactored into the second without changing its validation behaviour, but making it easier to infer a type:
 
 ```json
 {
@@ -101,35 +112,78 @@ As an example, the following two schemas are logically equivalent but are expres
 }
 ```
 
-### Eliminating anonymous allOfs
+Normalized version:
 
-The following demonstrates the boolean expression refactoring that can be used to eliminate anonymous schemas in allOfs.
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "age": { "type": "integer" }
+  }
+}
+```
 
-`x = (a & b & c) & (d & e & f) & (g & h & i)`
-simplifes to
-`x = a & b & c & d & e & f & g & h & i`
-assuming there are no contradicting keywords.
-
-It is only necessary to eliminate anonymous schemas as schemas with $id or using $ref can be projected into a type that is used as an inheritance base type or interface on the root schema.
-
-This technique can also help when there are keywords in the root schema.
-
-`x = a & b & (c & d & e)`
-simplifies to
-`x = a & b & c & d & e`
 
 ### Simplifying oneOf/AnyOfs
 
 Schemas that contain a `oneOf` or `anyOf` keyword and other keywords can have the top level keywords pushed down into the `oneOf/allOf` subschemas. This enables the use of union types to represent `oneOfs` and a type with multiple interfaces to support `anyOfs`.
 
+> JSON Schema has no opinion on how oneOf/AnyOf should be deserialized into types.  One way to implement it is to treat anyOf as simply a short-circuitable version of oneOf respecting the order of subschemas.  i.e. the first subschema that matches is the one that gets deserialized.  The other way of considering it is that all matching subschemas should be populated. Ideally, this specification should have an opinion on which is the right solution.
+
 `x = a & b & (c | d | e)`
+
 is equivalent to
+
 `x = a & b & c | a & b & d | a & b & e`
 
 
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "integer" }
+  },
+  "oneOf": [ {
+      "type": "object",
+      "properties": {
+        "profession": { "const": "teacher" },
+        "isTenured": { "type": "bool" }
+      }
+  },
+  {
+      "type": "object",
+      "properties": {
+        "profession": { "const": "lawyer" },
+        "passedBar": { "type": "bool" }
+      }
+    }
+  ]
+}
+```
+Normalized version:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "age": { "type": "integer" },
+    "profession": { "enum": ["lawyer", "teacher"] },
+    "passedBar": { "type": "bool" },
+    "isTenured": { "type": "bool" }
+  }
+}
+```
+
+Note that some additional specialized transformations may be necessary for schemas that have duplicate properties. In this case, the property `profession` is acting as a discriminator and needed to be coerced from a const to an array of enums.
+
 ## Type Inference
 
-All schemas need a type keyword that only has a single type value, other than null, to be able to map the schema to a language type. If the type keyword is missing, it is inferred based on the presence of properties/items.  This only happens after processing of allOf/anyOf/oneOf keywords.
+All schemas need a type keyword that only has a single type value, other than null, to be able to map the schema to a single language type. If the type keyword is missing, it is inferred based on the presence of properties/items.  This only happens after processing of allOf/anyOf/oneOf keywords.
 In the scenario where the keywords in schema apply to different types, the schema can be refactored to a `oneOf` where each subschema contains only the keywords that apply to that type.
 
 e.g.
@@ -171,21 +225,9 @@ becomes
 
 ## Inline vs references
 
-If you want to model a schema as a type, either reference it or give it a title.
+There may be cases where elimination af an `allOf` is not desirable as the subschema is represented as a named type.  This is often the case when modelling inheritance or interfaces. The use of a $ref is an indication of the intent to reuse a schema, and $refs provide a potential identifer for the type and therefore, referenced schemas should be mapped to a type.
 
-## allOf
-
-
-* allOfs that contain inlined schemas without titles are flattened.
-* additionalProperties of inlined schemas are ignored
-
-## oneOf
-
-Schemas that only contain oneOfs with titles or
-
-## additionalProperties as an object
-
-## patternProperties
+> Should there be a way to indicate that an inline schema be referenced as a type?  e.g. by using the title?
 
 # Constraints
 
@@ -211,7 +253,7 @@ The following keywords depend on the instance document and therefore SHOULD NOT 
 * unevaluatedProperties
 * dependentSchemas
 
-<aside> Note that these keywords could be processed to augment the model to accomodate any of the possible outcomes. This is problematic when the outcomes are contradictory. TBD </aside>
+> Note that these keywords could be processed to augment the model to accomodate any of the possible outcomes. This is problematic when the outcomes are contradictory. TBD
 
 # Security Considerations
 
@@ -238,10 +280,17 @@ TODO acknowledge.
 - Infer Type keyword where present
 - If schema supports multiple types (not including null) then create a oneOf for each type.
 
-
 ## Appendix - Evaluation methodology
 
 JSON Schema in prompt -> LLM -> JSON Instance -> Validate against JSON Schema -> Deserialize  -> Validate properties
 Repeat using normalized JSON Schema
 Translate to CDDL and repeat with CDDL in prompt
 
+## Problem scenarios
+
+- oneOfs where one of the subschemas is anonymous
+
+## Open Issues
+
+- additionalProperties as an object
+- patternProperties
